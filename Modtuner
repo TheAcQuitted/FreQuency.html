@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3-6-9 Generate + Detect Vibration Lab</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #050505; color: #0f0; text-align: center; padding: 15px; margin: 0; }
+    h1 { margin: 10px 0 5px; color: #0f0; }
+    .section { background: #111; border: 2px solid #0a0; border-radius: 16px; padding: 20px; margin: 18px auto; max-width: 520px; }
+    .freq-display { font-size: 2.4em; font-weight: bold; color: #0ff; margin: 10px 0; }
+    input[type="range"] { width: 100%; accent-color: #0f0; }
+    input[type="number"] { width: 140px; padding: 10px; font-size: 1.3em; background: #000; color: #0ff; border: 2px solid #0a0; border-radius: 8px; text-align: center; }
+    button { padding: 14px 30px; font-size: 18px; margin: 8px; border: none; border-radius: 50px; cursor: pointer; }
+    .preset-btn { background: #330; color: #ff0; }
+    #detectBtn { background: #06f; }
+    #detectBtn.active { background: #f60; }
+  </style>
+</head>
+<body>
+  <h1>3-6-9 Vibration Lab</h1>
+  <p>Generate tones • Detect real object vibrations</p>
+
+  <!-- Presets -->
+  <div class="section" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
+    <button class="preset-btn" onclick="loadPreset(1)">369-396-639</button>
+    <button class="preset-btn" onclick="loadPreset(2)">369-639-963</button>
+    <button class="preset-btn" onclick="loadPreset(3)">396-528-639</button>
+    <button class="preset-btn" onclick="loadPreset(4)">432-528-963</button>
+    <button class="preset-btn" onclick="loadPreset(5)">174-285-396</button>
+  </div>
+
+  <!-- Generators -->
+  <div class="section">
+    <h3>Osc 1 — Lowest</h3>
+    <div class="freq-display" id="f1val">396.00 Hz</div>
+    <input type="range" id="freq1" min="1" max="3000" value="396" step="0.01">
+    <input type="number" id="freq1num" value="396.00" step="0.01">
+    <label>Volume</label><input type="range" id="vol1" min="0" max="1" value="0.65" step="0.01">
+  </div>
+
+  <div class="section">
+    <h3>Osc 2 — Middle</h3>
+    <div class="freq-display" id="f2val">639.00 Hz</div>
+    <input type="range" id="freq2" min="1" max="3000" value="639" step="0.01">
+    <input type="number" id="freq2num" value="639.00" step="0.01">
+    <label>Volume</label><input type="range" id="vol2" min="0" max="1" value="0.65" step="0.01">
+  </div>
+
+  <div class="section">
+    <h3>Osc 3 — Highest</h3>
+    <div class="freq-display" id="f3val">963.00 Hz</div>
+    <input type="range" id="freq3" min="1" max="3000" value="963" step="0.01">
+    <input type="number" id="freq3num" value="963.00" step="0.01">
+    <label>Volume</label><input type="range" id="vol3" min="0" max="1" value="0.65" step="0.01">
+  </div>
+
+  <div class="section">
+    <label>Master Volume <span id="masterval">0.75</span></label>
+    <input type="range" id="master" min="0" max="1" value="0.75" step="0.01">
+    <br><br>
+    <button id="playBtn">▶ START TONES</button>
+    <button id="stopBtn">■ STOP TONES</button>
+  </div>
+
+  <!-- Frequency Detector -->
+  <div class="section">
+    <h3>Mic Detector — Object Vibration</h3>
+    <div class="freq-display" id="detectedFreq" style="color:#ff0;">— Hz</div>
+    <button id="detectBtn">🎤 Start Mic Detection</button>
+    <p style="font-size:0.9em; color:#aaa; margin-top:10px;">Hold vibrating object near mic</p>
+  </div>
+
+  <script>
+    // === Audio Context & Oscillators (same as before) ===
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let oscillators = [], isPlaying = false;
+    let analyser, micSource, animationFrame;
+    let detecting = false;
+
+    const freqSliders = [document.getElementById('freq1'), document.getElementById('freq2'), document.getElementById('freq3')];
+    const freqNums = [document.getElementById('freq1num'), document.getElementById('freq2num'), document.getElementById('freq3num')];
+    const volSliders = [document.getElementById('vol1'), document.getElementById('vol2'), document.getElementById('vol3')];
+    const masterSlider = document.getElementById('master');
+
+    function updateLabels() {
+      freqSliders.forEach((s, i) => {
+        const val = parseFloat(s.value).toFixed(2);
+        document.getElementById(`f${i+1}val`).textContent = val + " Hz";
+        freqNums[i].value = val;
+      });
+      document.getElementById('masterval').textContent = parseFloat(masterSlider.value).toFixed(2);
+    }
+
+    // Sync controls
+    freqSliders.forEach((slider, i) => {
+      slider.addEventListener('input', () => { freqNums[i].value = parseFloat(slider.value).toFixed(2); updateLabels(); });
+      freqNums[i].addEventListener('input', () => {
+        let val = parseFloat(freqNums[i].value);
+        if (!isNaN(val)) slider.value = Math.max(1, Math.min(3000, val));
+        updateLabels();
+      });
+    });
+    [masterSlider, ...volSliders].forEach(s => s.addEventListener('input', updateLabels));
+
+    function loadPreset(n) {
+      if (isPlaying) stopTones();
+      const sets = [[369,396,639],[369,639,963],[396,528,639],[432,528,963],[174,285,396]];
+      sets[n-1].forEach((f,i) => { freqSliders[i].value = f; freqNums[i].value = f; });
+      updateLabels();
+    }
+
+    function startTones() { /* same as previous version - omitted for brevity but fully included in copy-paste */ 
+      if (isPlaying) stopTones();
+      oscillators = [];
+      const masterVol = parseFloat(masterSlider.value);
+      freqSliders.forEach((fs, i) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(parseFloat(fs.value), audioContext.currentTime);
+        gain.gain.setValueAtTime(parseFloat(volSliders[i].value) * masterVol, audioContext.currentTime);
+        osc.connect(gain).connect(audioContext.destination);
+        osc.start();
+        oscillators.push({osc, gain, index: i});
+      });
+      isPlaying = true;
+    }
+
+    function stopTones() {
+      oscillators.forEach(o => o.osc.stop());
+      oscillators = [];
+      isPlaying = false;
+    }
+
+    setInterval(() => {
+      if (!isPlaying) return;
+      const master = parseFloat(masterSlider.value);
+      oscillators.forEach(o => {
+        const vol = parseFloat(volSliders[o.index].value) * master;
+        o.gain.gain.setValueAtTime(vol, audioContext.currentTime);
+      });
+    }, 30);
+
+    // === Microphone Frequency Detection ===
+    async function startDetection() {
+      if (detecting) { stopDetection(); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micSource = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.8;
+        micSource.connect(analyser);
+
+        detecting = true;
+        document.getElementById('detectBtn').classList.add('active');
+        document.getElementById('detectBtn').textContent = '⏹ Stop Detection';
+
+        const buffer = new Uint8Array(analyser.frequencyBinCount);
+
+        function detect() {
+          if (!detecting) return;
+          analyser.getByteFrequencyData(buffer);
+
+          let maxAmp = 0;
+          let peakIndex = 0;
+          for (let i = 0; i < buffer.length; i++) {
+            if (buffer[i] > maxAmp) {
+              maxAmp = buffer[i];
+              peakIndex = i;
+            }
+          }
+
+          const nyquist = audioContext.sampleRate / 2;
+          const detected = (peakIndex * nyquist / buffer.length).toFixed(1);
+          document.getElementById('detectedFreq').textContent = detected + " Hz";
+
+          animationFrame = requestAnimationFrame(detect);
+        }
+        detect();
+      } catch (e) {
+        alert("Microphone access denied or unavailable.");
+      }
+    }
+
+    function stopDetection() {
+      detecting = false;
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      document.getElementById('detectBtn').classList.remove('active');
+      document.getElementById('detectBtn').textContent = '🎤 Start Mic Detection';
+      document.getElementById('detectedFreq').textContent = '— Hz';
+    }
+
+    document.getElementById('playBtn').addEventListener('click', startTones);
+    document.getElementById('stopBtn').addEventListener('click', stopTones);
+    document.getElementById('detectBtn').addEventListener('click', startDetection);
+
+    updateLabels();
+  </script>
+</body>
+</html>
