@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="369 Advanced Vibration Lab">
+    <title>369 Vibration Lab • FreQuency</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00ff9f">
+
+    <style>
+        :root {
+            --bg: #050505;
+            --accent: #00ff9f;
+            --panel: #0a0a0a;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: var(--bg);
+            color: #fff;
+            margin: 0;
+            padding: 20px 10px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2.4em;
+            color: var(--accent);
+            text-shadow: 0 0 20px var(--accent);
+            margin: 10px 0 5px;
+        }
+        .subtitle { color: #aaa; margin-bottom: 25px; }
+        .section {
+            background: var(--panel);
+            border: 2px solid var(--accent);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 15px rgba(0, 255, 159, 0.2);
+        }
+        button {
+            background: transparent;
+            color: var(--accent);
+            border: 2px solid var(--accent);
+            padding: 12px 20px;
+            border-radius: 12px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover, button.active {
+            background: var(--accent);
+            color: #000;
+        }
+        .freq-display {
+            font-size: 3.2em;
+            font-weight: bold;
+            color: var(--accent);
+            margin: 15px 0;
+            text-shadow: 0 0 15px var(--accent);
+        }
+        .sensor-display {
+            font-size: 2.6em;
+            font-weight: bold;
+            min-height: 70px;
+            margin: 10px 0;
+        }
+        canvas {
+            width: 100%;
+            max-height: 110px;
+            background: #000;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>369 ADVANCED VIBRATION LAB</h1>
+    <p class="subtitle">Tesla • Solfeggio • Live Resonance Reader (Mic + Accelerometer)</p>
+
+    <!-- Master -->
+    <div class="section">
+        <div class="freq-display" id="masterFreq">174 Hz</div>
+        <input type="range" id="masterSlider" min="20" max="2000" value="174" step="1" style="width:90%;">
+    </div>
+
+    <!-- Multi-Frequency -->
+    <div class="section">
+        <h2 style="color:var(--accent);">Multi-Frequency Engine</h2>
+        <div id="oscillators" style="margin:15px 0;"></div>
+        <button onclick="addOscillator()">+ Add Oscillator</button>
+        <button onclick="clearAllOscillators()">Clear All</button>
+    </div>
+
+    <!-- Physical Readers -->
+    <div class="section">
+        <h2 style="color:var(--accent);">📡 Zero-Hardware Physical Frequency Readers</h2>
+        
+        <div class="sensor-grid">
+            <!-- Mic -->
+            <div class="section" style="margin:0; padding:15px;">
+                <button onclick="toggleMic()" id="micBtn" style="width:100%;">🎤 MICROPHONE<br><small>Tap near object</small></button>
+                <div class="sensor-display" id="micFreq" style="color:#ff0;">— Hz</div>
+                <canvas id="micCanvas" width="600" height="100"></canvas>
+            </div>
+
+            <!-- Accel -->
+            <div class="section" style="margin:0; padding:15px;">
+                <button onclick="toggleAccel()" id="accelBtn" style="width:100%;">📱 ACCELEROMETER<br><small>Phone on rock</small></button>
+                <div class="sensor-display" id="accelFreq" style="color:#0ff;">— Hz</div>
+                <canvas id="accelCanvas" width="600" height="100"></canvas>
+            </div>
+        </div>
+
+        <!-- Best Guess -->
+        <div class="section" style="margin-top:15px;">
+            <button onclick="toggleCombined()" id="combinedBtn" style="width:100%; font-size:1.2em;">🔄 BEST GUESS (Both Sensors)</button>
+            <div class="sensor-display" id="combinedFreq" style="color:#f0f;">— Hz</div>
+        </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="section">
+        <h2 style="color:var(--accent);">369 & Sacred Presets</h2>
+        <div id="presets" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;"></div>
+    </div>
+
+    <div style="text-align:center; margin:30px 0;">
+        <button onclick="toggleMaster()" id="powerBtn" style="font-size:1.4em; padding:18px 40px;">START VIBRATION LAB</button>
+    </div>
+</div>
+
+<script>
+// ==================== CORE AUDIO & OSCILLATORS ====================
+let audioCtx, masterGain, oscillators = [], isRunning = false;
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.65;
+        masterGain.connect(audioCtx.destination);
+    }
+}
+
+function createOscillator(freq) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.value = 0.3;
+    osc.connect(gain).connect(masterGain);
+    return {osc, gain, freq};
+}
+
+function renderOscillators() {
+    const container = document.getElementById('oscillators');
+    container.innerHTML = '';
+    oscillators.forEach((o, i) => {
+        const div = document.createElement('div');
+        div.style.margin = "8px 0";
+        div.innerHTML = `
+            Channel ${i+1}: <span style="color:var(--accent)">${Math.round(o.freq)} Hz</span>
+            <input type="range" min="20" max="2000" value="${o.freq}" oninput="updateOsc(${i}, this.value)" style="width:100%;">
+        `;
+        container.appendChild(div);
+    });
+}
+
+function addOscillator() {
+    if (oscillators.length >= 6) return;
+    const freq = 174 + oscillators.length * 90;
+    const o = createOscillator(freq);
+    oscillators.push(o);
+    if (isRunning) o.osc.start();
+    renderOscillators();
+}
+
+function updateOsc(i, val) {
+    oscillators[i].freq = +val;
+    oscillators[i].osc.frequency.setValueAtTime(+val, audioCtx.currentTime);
+    renderOscillators();
+}
+
+function clearAllOscillators() {
+    oscillators.forEach(o => { if (isRunning) o.osc.stop(); });
+    oscillators = [];
+    renderOscillators();
+}
+
+// Master slider
+document.getElementById('masterSlider').addEventListener('input', e => {
+    document.getElementById('masterFreq').textContent = e.target.value + " Hz";
+});
+
+// Power button
+function toggleMaster() {
+    initAudio();
+    if (!isRunning) {
+        oscillators.forEach(o => { if (!o.osc.started) { o.osc.start(); o.osc.started = true; }});
+        isRunning = true;
+        document.getElementById('powerBtn').textContent = "STOP VIBRATION LAB";
+        document.getElementById('powerBtn').classList.add('active');
+    } else {
+        oscillators.forEach(o => o.osc.stop());
+        isRunning = false;
+        document.getElementById('powerBtn').textContent = "START VIBRATION LAB";
+        document.getElementById('powerBtn').classList.remove('active');
+    }
+}
+
+// ==================== SENSOR READERS ====================
+let micStream = null, analyser = null, micInterval = null;
+let accelInterval = null, accelData = [];
+let combinedInterval = null;
+
+// Microphone
+function toggleMic() {
+    const btn = document.getElementById('micBtn');
+    if (!micStream) {
+        initAudio();
+        navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: false}})
+        .then(stream => {
+            micStream = stream;
+            const source = audioCtx.createMediaStreamSource(stream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 4096;
+            source.connect(analyser);
+            btn.classList.add('active');
+            btn.textContent = "STOP MICROPHONE";
+            startMicReading();
+        }).catch(() => alert("Microphone access required"));
+    } else {
+        clearInterval(micInterval);
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = analyser = null;
+        btn.classList.remove('active');
+        btn.textContent = "🎤 MICROPHONE";
+        document.getElementById('micFreq').textContent = "— Hz";
+    }
+}
+
+function startMicReading() {
+    const canvas = document.getElementById('micCanvas');
+    const ctx = canvas.getContext('2d');
+    micInterval = setInterval(() => {
+        if (!analyser) return;
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        let max = 0, idx = 0;
+        for (let i = 0; i < data.length; i++) {
+            if (data[i] > max) { max = data[i]; idx = i; }
+        }
+        const freq = Math.round(idx * audioCtx.sampleRate / analyser.fftSize);
+        document.getElementById('micFreq').textContent = freq + " Hz";
+    }, 70);
+}
+
+// Accelerometer
+function toggleAccel() {
+    const btn = document.getElementById('accelBtn');
+    if (!accelInterval) {
+        if (typeof DeviceMotionEvent.requestPermission === "function") {
+            DeviceMotionEvent.requestPermission().then(perm => perm === "granted" && startAccel());
+        } else startAccel();
+    } else {
+        clearInterval(accelInterval);
+        window.removeEventListener('devicemotion', handleMotion);
+        accelInterval = null;
+        btn.classList.remove('active');
+        btn.textContent = "📱 ACCELEROMETER";
+        document.getElementById('accelFreq').textContent = "— Hz";
+    }
+}
+
+function startAccel() {
+    const btn = document.getElementById('accelBtn');
+    btn.classList.add('active');
+    btn.textContent = "STOP ACCELEROMETER";
+    accelData = [];
+    window.addEventListener('devicemotion', handleMotion);
+    accelInterval = setInterval(analyzeAccel, 80);
+}
+
+function handleMotion(e) {
+    if (e.accelerationIncludingGravity) {
+        const mag = Math.hypot(
+            e.accelerationIncludingGravity.x || 0,
+            e.accelerationIncludingGravity.y || 0,
+            e.accelerationIncludingGravity.z || 0
+        );
+        accelData.push(mag);
+        if (accelData.length > 128) accelData.shift();
+    }
+}
+
+function analyzeAccel() {
+    if (accelData.length < 40) return;
+    let crossings = 0;
+    for (let i = 1; i < accelData.length; i++) {
+        if (accelData[i-1] < 1.8 && accelData[i] >= 1.8) crossings++;
+    }
+    const freq = Math.round(crossings * 5);
+    document.getElementById('accelFreq').textContent = (freq > 8 ? freq : "—") + " Hz";
+}
+
+// Best Guess
+function toggleCombined() {
+    const btn = document.getElementById('combinedBtn');
+    if (!combinedInterval) {
+        btn.classList.add('active');
+        btn.textContent = "STOP BEST GUESS";
+        combinedInterval = setInterval(() => {
+            const m = parseFloat(document.getElementById('micFreq').textContent) || 0;
+            const a = parseFloat(document.getElementById('accelFreq').textContent) || 0;
+            let best = m || a;
+            if (m && a) best = Math.round((m + a) / 2);
+            document.getElementById('combinedFreq').textContent = best ? best + " Hz" : "— Hz";
+        }, 250);
+    } else {
+        clearInterval(combinedInterval);
+        combinedInterval = null;
+        btn.classList.remove('active');
+        btn.textContent = "🔄 BEST GUESS (Both Sensors)";
+    }
+}
+
+// Presets (example)
+const presets = [174,285,396,417,528,639,741,852,963];
+function loadPresets() {
+    const container = document.getElementById('presets');
+    presets.forEach(f => {
+        const b = document.createElement('button');
+        b.textContent = f + " Hz";
+        b.onclick = () => {
+            clearAllOscillators();
+            const o = createOscillator(f);
+            oscillators.push(o);
+            if (isRunning) o.osc.start();
+            renderOscillators();
+        };
+        container.appendChild(b);
+    });
+}
+
+// Init
+initAudio();
+oscillators.push(createOscillator(174));
+renderOscillators();
+loadPresets();
+</script>
+</body>
+</html>
